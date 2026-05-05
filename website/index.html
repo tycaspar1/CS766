@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>First-Layer 3D Print Quality Detection — CS 766 Project</title>
+  <meta name="description" content="Catching 3D printer first-layer defects before they happen. A classical computer-vision pipeline for early-stage print quality detection. CS 766 final project, UW–Madison, Spring 2026." />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<!-- =============== TOP NAV =============== -->
+<nav class="topnav">
+  <div class="inner">
+    <div class="brand">CS 766 · UW–Madison · Spring 2026</div>
+    <ul>
+      <li><a href="#background">Background</a></li>
+      <li><a href="#problem">Problem</a></li>
+      <li><a href="#approach">Approach</a></li>
+      <li><a href="#features">Features</a></li>
+      <li><a href="#results">Results</a></li>
+      <li><a href="#comparison">Comparison</a></li>
+      <li><a href="#discussion">Discussion</a></li>
+      <li><a href="#resources">Resources</a></li>
+    </ul>
+  </div>
+</nav>
+
+<!-- =============== HERO =============== -->
+<header class="hero">
+  <div class="badge">CS 766 Computer Vision · Final Project</div>
+  <h1>First-Layer 3D Print Quality Detection</h1>
+  <p class="subtitle">Catching print failures before they happen.</p>
+  <div class="meta">
+    <span>Jake Clifford</span> · <span>Tyler Caspar</span> · <span>Spring 2026</span> · <span>UW–Madison</span>
+  </div>
+</header>
+
+<!-- =============== 1. BACKGROUND =============== -->
+<section id="background">
+  <h2>What is 3D Printing?</h2>
+  <p class="lede">
+    Fused-deposition 3D printers extrude molten plastic in thin layers to build a part from the bottom up.
+    The technology has put low-cost custom fabrication in the hands of hobbyists, engineers, and entire industries.
+  </p>
+  <div class="two-col">
+    <div>
+      <ul class="bullets">
+        <li>Plastic is extruded layer by layer to form a 3D part.</li>
+        <li>Cheap and accessible — desktop printers cost a few hundred dollars.</li>
+        <li>Used for prototyping, medical and dental devices, custom tooling, and small production runs.</li>
+        <li>A single print can take anywhere from a few minutes to several days.</li>
+      </ul>
+    </div>
+    <img src="assets/uw_print_in_progress.png" alt="A UW Madison plaque being 3D printed." />
+  </div>
+</section>
+
+<!-- =============== 2. THE PROBLEM =============== -->
+<section id="problem">
+  <h2>The Problem</h2>
+  <p class="lede">
+    It's great — until it isn't. When a print goes wrong, the failure can be invisible for hours, and the cost is real.
+  </p>
+  <div class="two-col">
+    <img src="assets/failed_bust_print.png" alt="A 3D-printed bust that failed mid-print." />
+    <div>
+      <h3>The cost of a failed print</h3>
+      <ul class="bullets">
+        <li><strong>Lost time</strong> — a single failed print can throw away hours or days of machine time.</li>
+        <li><strong>Wasted filament</strong> — every failed layer is plastic that has to be scrapped.</li>
+        <li><strong>Commercial scrap</strong> — at production scale, these losses compound across machines.</li>
+        <li><strong>Missed deadlines</strong> — a quiet failure overnight is a deliverable pushed by a day.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- =============== 3. STATE OF DEFECT DETECTION =============== -->
+<section id="state">
+  <h2>The State of 3D-Print Defect Detection</h2>
+  <p class="lede">
+    Existing tools focus on dramatic, late-stage failures — by the time they fire, the damage is already done.
+  </p>
+
+  <div class="card-grid cols-2">
+    <div class="card">
+      <h4>Common defects today's tools watch for</h4>
+      <ul class="bullets">
+        <li>Extrusion problems (under / over-extrusion)</li>
+        <li>Warping &amp; bed-adhesion failures</li>
+        <li>Layer shifts</li>
+        <li>"Spaghetti" — full structural collapse</li>
+        <li>Stringing &amp; zits — surface artifacts</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4>What exists today</h4>
+      <ul class="bullets">
+        <li>CNN-based monitors (e.g., Obico's "Spaghetti Detective")</li>
+        <li>Trained on thousands of catastrophic-failure images</li>
+        <li>Reactive — they trigger after the print is already ruined</li>
+        <li>Most failure modes can only be observed late in a print</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="banner">
+    <strong>The gap:</strong> nothing on the market catches problems
+    <em>proactively</em>, at the earliest possible stage — the very first layer.
+  </div>
+</section>
+
+<!-- =============== 4. CATCH IT AT LAYER ONE =============== -->
+<section id="motivation">
+  <h2>Catch It at Layer One</h2>
+  <p class="lede">
+    The first layer tells you almost everything about whether the rest of the print will succeed.
+    A good first layer is uniform, well-bonded, and free of gaps. A bad first layer is a print that's already failed —
+    even if the printer keeps going for hours.
+  </p>
+
+  <div class="example-grid">
+    <figure>
+      <img src="assets/example_optimal.png" alt="Optimal first-layer print." />
+      <figcaption class="optimal">Optimal</figcaption>
+    </figure>
+    <figure>
+      <img src="assets/example_under_extruded.png" alt="Under-extruded first-layer print, gaps visible." />
+      <figcaption class="under">Under-extruded</figcaption>
+    </figure>
+    <figure>
+      <img src="assets/example_over_extruded.png" alt="Over-extruded first-layer print, lines blurred together." />
+      <figcaption class="over">Over-extruded</figcaption>
+    </figure>
+    <figure>
+      <img src="assets/example_catastrophic.png" alt="A catastrophic print failure that started at layer one." />
+      <figcaption class="failed">If we don't catch it…</figcaption>
+    </figure>
+  </div>
+
+  <div class="callout">
+    <strong>Our goal:</strong> classify the first layer of a print as
+    <em>optimal</em>, <em>under-extruded</em>, or <em>over-extruded</em> from a single top-down image —
+    using only classical computer vision, with no deep learning in the pipeline.
+  </div>
+</section>
+
+<!-- =============== 5. APPROACH / MODEL ITERATIONS =============== -->
+<section id="approach">
+  <h2>Our Approach</h2>
+  <p class="lede">
+    A pipeline that takes a single top-down image of a print's first layer, extracts a
+    6-dimensional feature vector, and classifies the layer as optimal, under-extruded, or over-extruded.
+  </p>
+
+  <figure class="pipeline">
+    <img src="assets/pipeline_diagram.png" alt="Pipeline diagram: input image → masking and ROI extraction → edge and gradient features → 6-feature vector → Mahalanobis classifier → label." />
+  </figure>
+
+  <h3>Model iterations</h3>
+  <div class="card-grid cols-4">
+    <div class="iteration-card">
+      <div class="version">v1 · Baseline</div>
+      <div class="pct">26%</div>
+      <div class="label">Hardcoded threshold</div>
+    </div>
+    <div class="iteration-card">
+      <div class="version">v2 · Multi-Feature</div>
+      <div class="pct">48%</div>
+      <div class="label">&nbsp;</div>
+    </div>
+    <div class="iteration-card">
+      <div class="version">v5 · Mahalanobis</div>
+      <div class="pct">52%</div>
+      <div class="label">&nbsp;</div>
+    </div>
+    <div class="iteration-card highlight">
+      <div class="version">v7 · Line-Spacing</div>
+      <div class="pct">60%</div>
+      <div class="label">&nbsp;</div>
+    </div>
+  </div>
+</section>
+
+<!-- =============== 6. FEATURES + MAHALANOBIS =============== -->
+<section id="features">
+  <h2>6 Features → One Classification</h2>
+  <p class="lede">
+    Each input image is reduced to a 6-dimensional feature vector. The classifier uses the
+    Mahalanobis distance to the learned class means in this 6-D space — the closest mean wins.
+  </p>
+
+  <ul class="feature-list">
+    <li><strong>Fill density</strong> — % of ROI that is an edge pixel.</li>
+    <li><strong>Gradient entropy</strong> — spread of edge directions.</li>
+    <li><strong>Gradient kurtosis</strong> — peakedness of direction histogram.</li>
+    <li><strong>Edge-to-gradient</strong> — edges vs. strong gradients.</li>
+    <li><strong>Edge density CV</strong> — variance across image patches.</li>
+    <li class="star"><strong>Line-spacing uniformity ★</strong> — regularity of extrusion lines (largest single iteration impact: +20% under-extruded recall).</li>
+  </ul>
+
+  <h3>The Mahalanobis classifier</h3>
+  <div class="equation">
+    d(x, μ<sub>c</sub>) = √( (x − μ<sub>c</sub>)<sup>T</sup> &nbsp;Σ<sup>−1</sup>&nbsp; (x − μ<sub>c</sub>) )
+    <span class="small">Distance from feature vector <em>x</em> to class mean <em>μ<sub>c</sub></em>, scaled by inverse covariance Σ<sup>−1</sup>.</span>
+  </div>
+
+  <h3>How we trained and classified</h3>
+  <p>
+    Training is a one-time computation done on the labeled dataset. For every training image we run the same
+    feature-extraction pipeline shown above to produce one numeric vector per image. We then group the vectors
+    by their ground-truth class — <em>optimal</em>, <em>under-extruded</em>, or <em>over-extruded</em> — and
+    average them to get a class mean <em>μ<sub>c</sub></em>. We also pool the residuals (each vector minus its
+    class mean) and compute a single covariance matrix <em>Σ</em> that captures how the features co-vary across
+    the dataset. The trained model is just those three class means and the inverse covariance Σ<sup>−1</sup>.
+  </p>
+  <p>
+    Classification of a new image follows the same path: run the image through the pipeline to compute the same
+    set of features, then evaluate the Mahalanobis distance from that feature vector to each class mean using
+    the equation above. The class with the smallest distance is the predicted label, and the gap between the
+    closest and second-closest distance gives us a confidence score.
+  </p>
+</section>
+
+<!-- =============== 7. RESULTS =============== -->
+<section id="results">
+  <h2>Results</h2>
+  <p class="lede">
+    On our 65-image dataset the pipeline labels 39 of 65 first-layer images correctly —
+    a 60.0% accuracy that beats both random (33%) and the largest-class baseline (37%).
+  </p>
+
+  <div class="stats">
+    <div class="stat">
+      <div class="big">39 / 65</div>
+      <div class="lab">Correct classifications</div>
+    </div>
+    <div class="stat">
+      <div class="big">60.0%</div>
+      <div class="lab">Overall accuracy</div>
+    </div>
+    <div class="stat muted">
+      <div class="big">37%</div>
+      <div class="lab">Largest-class baseline</div>
+    </div>
+  </div>
+
+  <h3>Confusion matrix</h3>
+  <table class="confusion">
+    <thead>
+      <tr>
+        <th></th>
+        <th>Pred. Optimal</th>
+        <th>Pred. Under</th>
+        <th>Pred. Over</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <th>Actual Optimal</th>
+        <td class="diag">17</td>
+        <td>4</td>
+        <td>3</td>
+      </tr>
+      <tr>
+        <th>Actual Under</th>
+        <td>5</td>
+        <td class="diag">11</td>
+        <td>4</td>
+      </tr>
+      <tr>
+        <th>Actual Over</th>
+        <td>4</td>
+        <td>6</td>
+        <td class="diag">11</td>
+      </tr>
+    </tbody>
+  </table>
+  <p style="font-size: 13px; color: var(--uw-gray-3); text-align: center; margin-top: -4px;">
+    Diagonal entries are correct predictions. Random baseline = 33%; largest-class baseline = 37%.
+  </p>
+
+  <h3>Detection algorithm in action</h3>
+  <figure class="full-img">
+    <img src="assets/detection_in_action.png" alt="Six-panel visualization showing input image, HSV mask, Canny edges, gradient magnitude, FFT spectrum, and final classification." />
+    <figcaption>End-to-end visualization on a sample first-layer image: input → masking → edges → gradient → FFT → label.</figcaption>
+  </figure>
+
+  <figure class="full-img">
+    <img src="assets/detection_under_extruded.png" alt="Pipeline visualization on an under-extruded first-layer image, correctly classified." />
+    <figcaption>Under-extruded example, correctly classified with 0.83 confidence.</figcaption>
+  </figure>
+
+  <figure class="full-img">
+    <img src="assets/detection_over_extruded.png" alt="Pipeline visualization on an over-extruded first-layer image, correctly classified." />
+    <figcaption>Over-extruded example, correctly classified with 0.75 confidence.</figcaption>
+  </figure>
+</section>
+
+<!-- =============== 8. CNN COMPARISON =============== -->
+<section id="comparison">
+  <h2>Comparison to a CNN Baseline</h2>
+  <p class="lede">
+    We trained a YOLOv11s baseline on roughly 9,000 images of common 3D-print defects to see how an
+    off-the-shelf deep model would perform on the same first-layer images we evaluate on.
+  </p>
+
+  <div class="two-col">
+    <figure class="full-img" style="margin: 0;">
+      <img src="assets/cnn_comparison.png" alt="Bar chart: YOLOv11s 15.4% detection rate at layer 1 vs our pipeline at 60.0%." />
+    </figure>
+    <div>
+      <h3>Why the CNN underperforms here</h3>
+      <p>
+        The YOLOv11s baseline was trained on images of <em>spaghetti</em>, <em>stringing</em>, and <em>zits</em> —
+        catastrophic, late-stage failure modes that physically cannot occur on the very first layer.
+      </p>
+      <p>
+        The CNN isn't wrong — it's answering a different question.
+      </p>
+      <div class="callout">
+        <strong>Our approach asks the right question at the right time:</strong>
+        is this <em>first layer</em> healthy, under-extruded, or over-extruded?
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- =============== 9. DISCUSSION / WHAT WE LEARNED =============== -->
+<section id="discussion">
+  <h2>What We Learned</h2>
+
+  <div class="card-grid cols-3">
+    <div class="card">
+      <h4>Data challenges</h4>
+      <ul class="bullets" style="padding-left: 18px;">
+        <li>Top-down first-layer images are rare on the public web.</li>
+        <li>Lighting, color, and bed material vary print-to-print.</li>
+        <li>Our 65-image dataset was hand-curated from YouTube footage.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4>Key insight</h4>
+      <ul class="bullets" style="padding-left: 18px;">
+        <li>Dataset size, not feature design, was the real bottleneck.</li>
+        <li>Around 8 features is the practical ceiling at this dataset scale.</li>
+        <li>Adding more features past v7 caused the model to overfit.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4>Future work</h4>
+      <ul class="bullets" style="padding-left: 18px;">
+        <li>Larger dataset.</li>
+        <li>Printer firmware integration.</li>
+        <li>Mobile app.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- =============== 10. RESOURCES / DELIVERABLES =============== -->
+<section id="resources">
+  <h2>Resources &amp; Deliverables</h2>
+  <p class="lede">
+    Everything you need to inspect, run, or grade this project — including the proposal, mid-term report,
+    in-class presentation, and full source code.
+  </p>
+
+  <div class="resource-grid">
+    <a class="resource" href="source/Project%20Proposal.docx" download>
+      <div class="icon">&#128196;</div>
+      <div class="title">Project Proposal</div>
+      <div class="desc">Original project proposal (.docx)</div>
+    </a>
+    <a class="resource" href="source/midterm_report.pdf" target="_blank" rel="noopener">
+      <div class="icon">&#128209;</div>
+      <div class="title">Mid-term Report</div>
+      <div class="desc">Mid-semester progress write-up (PDF)</div>
+    </a>
+    <a class="resource" href="#" id="presentation-slides-link">
+      <div class="icon">&#128194;</div>
+      <div class="title">Final Presentation Slides</div>
+      <div class="desc">In-class presentation deck (link added before submission)</div>
+    </a>
+    <a class="resource" href="#" id="presentation-video-link">
+      <div class="icon">&#127909;</div>
+      <div class="title">Recorded Presentation</div>
+      <div class="desc">In-class presentation video (link added before submission)</div>
+    </a>
+    <a class="resource" href="https://github.com/jakeclifford127/cs766-3d-print-quality" target="_blank" rel="noopener">
+      <div class="icon">&#128187;</div>
+      <div class="title">GitHub Repository</div>
+      <div class="desc">Full source — pipeline, classifier, and evaluation</div>
+    </a>
+  </div>
+</section>
+
+<!-- =============== FOOTER =============== -->
+<footer>
+  <div class="row"><strong>CS 766 — Computer Vision</strong> · Spring 2026 · UW–Madison</div>
+  <div class="row">Jake Clifford &amp; Tyler Caspar</div>
+  <div class="row">
+    <a href="https://github.com/jakeclifford127/cs766-3d-print-quality" target="_blank" rel="noopener">Source on GitHub</a>
+  </div>
+</footer>
+
+</body>
+</html>
